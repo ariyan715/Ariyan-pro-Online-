@@ -1,1 +1,18 @@
 
+{
+  "name": "photo-approval-backend",
+  "version": "1.0.0",
+  "description": "Telegram Photo Approval with FCM Notification",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.0",
+    "mysql2": "^3.9.7",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
