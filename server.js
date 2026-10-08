@@ -5,17 +5,17 @@ const cors = require('cors');
 
 const app = express();
 
-// ১. বড় আকারের ইমেজের জন্য Payload Limit ৫০ মেগাবাইট করা হলো
+// ১. বড় আকারের ইমেজের জন্য Payload Limit ৫০ মেগাবাইট
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors());
 
-// ডাটাবেজের বদলে সার্ভার মেমোরিতে রিয়েল-টাইম স্ট্যাটাস ধরে রাখার ব্যবস্থা
+// ডাটাবেজের বদলে ইন-মেমোরি স্টোরেজ
 const approvalsStore = new Map();
 
-// ২. হোম রুট (সার্ভার রানিং চেক)
+// ২. হোম রুট
 app.get('/', (req, res) => {
-    res.send('Server is running smoothly without DB dependency!');
+    res.send('Server is running smoothly!');
 });
 
 // ৩. টেলিগ্রাম বট কনফিগারেশন
@@ -23,7 +23,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
-// ৪. ছবি আপলোড ও টেলিগ্রামে পাঠানোর এপিআই
+// ৪. ছবি আপলোড এপিআই
 app.post('/api/upload-photo', async (req, res) => {
     const { userId, imageUrl } = req.body;
 
@@ -32,17 +32,14 @@ app.post('/api/upload-photo', async (req, res) => {
     }
 
     try {
-        // ডাটাবেজের বদলে মেমোরির জন্য ইউনিক রেকর্ড আইডি
         const recordId = 'REC_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
         
-        // ইন-মেমোরি স্টোরে রেকর্ড সেভ
         approvalsStore.set(recordId, {
             userId,
             status: 'pending',
             timestamp: Date.now()
         });
 
-        // Base64 ছবিকে টেলিগ্রাম বটের উপযোগী Buffer-এ কনভার্ট করা
         let photoBuffer;
         if (typeof imageUrl === 'string' && imageUrl.startsWith('data:image')) {
             const base64Data = imageUrl.replace(/^data:image\/\w+;base64,/, "");
@@ -51,7 +48,6 @@ app.post('/api/upload-photo', async (req, res) => {
             photoBuffer = imageUrl;
         }
 
-        // টেলিগ্রামে ছবি ও Approve/Reject বাটন পাঠানো
         await bot.sendPhoto(ADMIN_CHAT_ID, photoBuffer, {
             caption: `📸 **নতুন ছবি আপলোড**\n\n👤 **User ID:** \`${userId}\`\n🆔 **Record ID:** \`${recordId}\``,
             parse_mode: 'Markdown',
@@ -76,7 +72,7 @@ app.post('/api/upload-photo', async (req, res) => {
     }
 });
 
-// ৫. টেলিগ্রাম বাটনের রেসপন্স গ্রহণ
+// ৫. টেলিগ্রাম বাটনের রেসপন্স (FIXED)
 bot.on('callback_query', async (query) => {
     const data = query.data;
     if (!data || !data.includes('_')) return;
@@ -84,30 +80,39 @@ bot.on('callback_query', async (query) => {
     const [action, recordId] = data.split('_');
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
 
+    // ১. শুরুতেই টেলিগ্রামকে দ্রুত উত্তর দেওয়া যাতে বাটন লোডিং না আটকে থাকে
     try {
-        // মেমোরিতে ইউজারের স্ট্যাটাস আপডেট করা
+        await bot.answerCallbackQuery(query.id, { 
+            text: `ছবিটি ${action === 'approve' ? 'অনুমোদিত' : 'বাতিল'} করা হয়েছে!` 
+        });
+    } catch (e) {
+        console.error('Answer Callback Error:', e);
+    }
+
+    try {
+        // ২. মেমোরিতে স্ট্যাটাস আপডেট
         if (approvalsStore.has(recordId)) {
             const currentData = approvalsStore.get(recordId);
             currentData.status = newStatus;
             approvalsStore.set(recordId, currentData);
         }
 
-        const statusText = action === 'approve' ? '✅ Approved (অনুমোদিত)' : '❌ Rejected (বাতিল)';
-        
-        await bot.editMessageCaption(`${query.message.caption}\n\n**স্ট্যাটাস:** ${statusText}`, {
+        const statusText = action === 'approve' ? '✅ APPROVED (অনুমোদিত)' : '❌ REJECTED (বাতিল)';
+        const oldCaption = (query.message && query.message.caption) ? query.message.caption : '📸 ছবি আপলোড';
+
+        // ৩. নিরাপদে মেসেজের ক্যাপশন আপডেট করা (Markdown এরর এড়াতে)
+        await bot.editMessageCaption(`${oldCaption}\n\nস্ট্যাটাস: ${statusText}`, {
             chat_id: query.message.chat.id,
             message_id: query.message.message_id,
-            parse_mode: 'Markdown'
+            reply_markup: { inline_keyboard: [] } // একবার ক্লিক হলে বাটনগুলো রিমুভ হয়ে যাবে
         });
 
-        bot.answerCallbackQuery(query.id, { text: `ছবিটি ${newStatus} করা হয়েছে!` });
     } catch (error) {
-        console.error('Callback Error:', error);
-        bot.answerCallbackQuery(query.id, { text: 'আপডেট করতে সমস্যা হয়েছে' });
+        console.error('Callback Processing Error:', error);
     }
 });
 
-// ৬. ফ্রন্টএন্ড থেকে রিয়েল-টাইম স্ট্যাটাস চেক এপিআই (Polling)
+// ৬. স্ট্যাটাস চেক এপিআই (Polling)
 app.get('/api/status/:recordId', (req, res) => {
     const recordId = req.params.recordId;
     
@@ -119,7 +124,7 @@ app.get('/api/status/:recordId', (req, res) => {
     return res.status(404).json({ success: false, message: 'রেকর্ড পাওয়া যায়নি' });
 });
 
-// মেমোরি পরিষ্কার রাখার লজিক (১ ঘণ্টার পুরানো ডাটা অটো ক্লিনআপ)
+// ১ ঘণ্টার পুরানো মেমোরি অটো ক্লিনআপ
 setInterval(() => {
     const now = Date.now();
     for (const [key, value] of approvalsStore.entries()) {
