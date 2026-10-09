@@ -1,115 +1,135 @@
-require('dotenv').config();
 const express = require('express');
-const TelegramBot = require('node-telegram-bot-api');
 const cors = require('cors');
+const multer = require('multer');
+const fetch = require('node-fetch');
+const FormData = require('form-data');
+require('dotenv').config();
 
 const app = express();
+const upload = multer({ storage: multer.memoryStorage() });
 
-// ১. বড় আকারের ইমেজের জন্য Payload Limit ৫০ মেগাবাইট
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors());
+app.use(express.json());
 
-// ডাটাবেজের বদলে ইন-মেমোরি স্টোরেজ
-const approvalsStore = new Map();
-
-// ২. হোম রুট
-app.get('/', (req, res) => {
-    res.send('Server is running smoothly!');
-});
-
-// ৩. টেলিগ্রাম বট কনফিগারেশন
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const CHAT_ID = process.env.CHAT_ID;
+const PORT = process.env.PORT || 3000;
 
-// ৪. ছবি আপলোড এপিআই
-app.post('/api/upload-photo', async (req, res) => {
-    const { userId, imageUrl } = req.body;
+// SSE (Server-Sent Events) কানেকশন স্টোরেজ
+let clients = [];
 
-    if (!userId || !imageUrl) {
-        return res.status(400).json({ success: false, message: 'userId এবং imageUrl আবশ্যক' });
-    }
+// ১. ফ্রন্টএন্ডের জন্য Real-time SSE ইভেন্ট স্ট্রিম
+app.get('/api/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
 
-    try {
-        const recordId = 'REC_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-        
-        approvalsStore.set(recordId, {
-            userId,
-            status: 'pending',
-            timestamp: Date.now()
-        });
+  const clientId = Date.now();
+  const newClient = { id: clientId, res };
+  clients.push(newClient);
 
-        let photoBuffer;
-        if (typeof imageUrl === 'string' && imageUrl.startsWith('data:image')) {
-            const base64Data = imageUrl.replace(/^data:image\/\w+;base64,/, "");
-            photoBuffer = Buffer.from(base64Data, 'base64');
-        } else {
-            photoBuffer = imageUrl;
-        }
-
-        await bot.sendPhoto(ADMIN_CHAT_ID, photoBuffer, {
-            caption: `📸 **নতুন ছবি আপলোড**\n\n👤 **User ID:** \`${userId}\`\n🆔 **Record ID:** \`${recordId}\``,
-            parse_mode: 'Markdown',
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '✅ Approve', callback_data: `approve_${recordId}` },
-                        { text: '❌ Reject', callback_data: `reject_${recordId}` }
-                    ]
-                ]
-            }
-        });
-
-        return res.json({ success: true, message: 'ছবি টেলিগ্রামে পাঠানো হয়েছে', recordId });
-
-    } catch (error) {
-        console.error('Upload Error:', error);
-        return res.status(500).json({ 
-            success: false, 
-            message: error.message || 'টেলিগ্রামে ছবি পাঠাতে সমস্যা হয়েছে' 
-        });
-    }
+  req.on('close', () => {
+    clients = clients.filter(client => client.id !== clientId);
+  });
 });
 
-// ৫. টেলিগ্রাম বাটনের রেসপন্স (FIXED)
-bot.on('callback_query', async (query) => {
-    const data = query.data;
-    if (!data || !data.includes('_')) return;
+// সমস্ত ফ্রন্টএন্ড ক্লায়েন্টকে রিয়েল-টাইম আপডেট পাঠানোর ফাংশন
+function sendSSEEvent(data) {
+  clients.forEach(client => {
+    client.res.write(`data: ${JSON.stringify(data)}\n\n`);
+  });
+}
 
-    const [action, recordId] = data.split('_');
-    const newStatus = action === 'approve' ? 'approved' : 'rejected';
-
-    // ১. শুরুতেই টেলিগ্রামকে দ্রুত উত্তর দেওয়া যাতে বাটন লোডিং না আটকে থাকে
-    try {
-        await bot.answerCallbackQuery(query.id, { 
-            text: `ছবিটি ${action === 'approve' ? 'অনুমোদিত' : 'বাতিল'} করা হয়েছে!` 
-        });
-    } catch (e) {
-        console.error('Answer Callback Error:', e);
+// ২. ফটো আপলোড API (ফ্রন্টএন্ড থেকে স্ক্রিনশট রিসিভ ও টেলিগ্রামে সেন্ড)
+app.post('/api/upload', upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No image uploaded' });
     }
 
-    try {
-        // ২. মেমোরিতে স্ট্যাটাস আপডেট
-        if (approvalsStore.has(recordId)) {
-            const currentData = approvalsStore.get(recordId);
-            currentData.status = newStatus;
-            approvalsStore.set(recordId, currentData);
-        }
+    const userId = req.body.userId || Date.now().toString();
 
-        const statusText = action === 'approve' ? '✅ APPROVED (অনুমোদিত)' : '❌ REJECTED (বাতিল)';
-        const oldCaption = (query.message && query.message.caption) ? query.message.caption : '📸 ছবি আপলোড';
+    const formData = new FormData();
+    formData.append('chat_id', CHAT_ID);
+    formData.append('photo', req.file.buffer, { filename: 'screenshot.jpg' });
+    formData.append('caption', `📷 নতুন পেমেন্ট স্ক্রিনশট\nUser ID: ${userId}\nঅনুমোদন বা বাতিল করুন:`);
+    
+    // Telegram Inline Approve / Reject Buttons
+    const inlineKeyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Approve', callback_data: `approve_${userId}` },
+          { text: '❌ Reject', callback_data: `reject_${userId}` }
+        ]
+      ]
+    };
+    formData.append('reply_markup', JSON.stringify(inlineKeyboard));
 
-        // ৩. নিরাপদে মেসেজের ক্যাপশন আপডেট করা (Markdown এরর এড়াতে)
-        await bot.editMessageCaption(`${oldCaption}\n\nস্ট্যাটাস: ${statusText}`, {
-            chat_id: query.message.chat.id,
-            message_id: query.message.message_id,
-            reply_markup: { inline_keyboard: [] } // একবার ক্লিক হলে বাটনগুলো রিমুভ হয়ে যাবে
-        });
+    const telegramRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: 'POST',
+      body: formData
+    });
 
-    } catch (error) {
-        console.error('Callback Processing Error:', error);
+    const telegramData = await telegramRes.json();
+
+    if (telegramData.ok) {
+      // ৩০ মিনিটের অটো-রিজেক্ট টাইমার
+      setTimeout(() => {
+        sendSSEEvent({ status: 'rejected', userId, reason: 'Timeout (30 mins)' });
+      }, 30 * 60 * 1000);
+
+      return res.json({ success: true, message: 'Photo sent to Telegram', userId });
+    } else {
+      return res.status(500).json({ success: false, message: 'Telegram API error' });
     }
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ৩. Telegram Webhook (এডমিন যখন Approve/Reject বাটনে ক্লিক করবে)
+app.post('/api/telegram-webhook', async (req, res) => {
+  const update = req.body;
+
+  if (update && update.callback_query) {
+    const callbackQuery = update.callback_query;
+    const data = callbackQuery.data;
+    const callbackId = callbackQuery.id;
+
+    const [action, userId] = data.split('_');
+
+    if (action === 'approve') {
+      sendSSEEvent({ status: 'approved', userId });
+
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callback_query_id: callbackId, text: 'অনুমোদিত হয়েছে!' })
+      });
+    } else if (action === 'reject') {
+      sendSSEEvent({ status: 'rejected', userId });
+
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callback_query_id: callbackId, text: 'বাতিল করা হয়েছে!' })
+      });
+    }
+  }
+
+  res.sendStatus(200);
+});
+
+app.get('/', (req, res) => {
+  res.send('Railway Telegram Approval Backend is Running!');
+});
+
+app.listen(PORT, () => {
+  console.log(`Server active on port ${PORT}`);
+});
+
 });
 
 // ৬. স্ট্যাটাস চেক এপিআই (Polling)
