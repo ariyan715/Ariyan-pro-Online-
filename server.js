@@ -15,10 +15,10 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const PORT = process.env.PORT || 3000;
 
-// SSE (Server-Sent Events) কানেকশন স্টোরেজ
+// SSE Client Storage
 let clients = [];
 
-// ১. ফ্রন্টএন্ডের জন্য Real-time SSE ইভেন্ট স্ট্রিম
+// 1. SSE Endpoint for Real-time Frontend Events
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -34,14 +34,14 @@ app.get('/api/events', (req, res) => {
   });
 });
 
-// সমস্ত ফ্রন্টএন্ড ক্লায়েন্টকে রিয়েল-টাইম আপডেট পাঠানোর ফাংশন
+// Function to send SSE events
 function sendSSEEvent(data) {
   clients.forEach(client => {
     client.res.write(`data: ${JSON.stringify(data)}\n\n`);
   });
 }
 
-// ২. ফটো আপলোড API (ফ্রন্টএন্ড থেকে স্ক্রিনশট রিসিভ ও টেলিগ্রামে সেন্ড)
+// 2. Photo Upload API
 app.post('/api/upload', upload.single('photo'), async (req, res) => {
   try {
     if (!req.file) {
@@ -54,8 +54,7 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
     formData.append('chat_id', CHAT_ID);
     formData.append('photo', req.file.buffer, { filename: 'screenshot.jpg' });
     formData.append('caption', `📷 নতুন পেমেন্ট স্ক্রিনশট\nUser ID: ${userId}\nঅনুমোদন বা বাতিল করুন:`);
-    
-    // Telegram Inline Approve / Reject Buttons
+
     const inlineKeyboard = {
       inline_keyboard: [
         [
@@ -74,7 +73,6 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
     const telegramData = await telegramRes.json();
 
     if (telegramData.ok) {
-      // ৩০ মিনিটের অটো-রিজেক্ট টাইমার
       setTimeout(() => {
         sendSSEEvent({ status: 'rejected', userId, reason: 'Timeout (30 mins)' });
       }, 30 * 60 * 1000);
@@ -89,37 +87,41 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
   }
 });
 
-// ৩. Telegram Webhook (এডমিন যখন Approve/Reject বাটনে ক্লিক করবে)
+// 3. Telegram Webhook Endpoint
 app.post('/api/telegram-webhook', async (req, res) => {
-  const update = req.body;
+  try {
+    const update = req.body;
 
-  if (update && update.callback_query) {
-    const callbackQuery = update.callback_query;
-    const data = callbackQuery.data;
-    const callbackId = callbackQuery.id;
+    if (update && update.callback_query) {
+      const callbackQuery = update.callback_query;
+      const data = callbackQuery.data;
+      const callbackId = callbackQuery.id;
 
-    const [action, userId] = data.split('_');
+      const [action, userId] = data.split('_');
 
-    if (action === 'approve') {
-      sendSSEEvent({ status: 'approved', userId });
+      if (action === 'approve') {
+        sendSSEEvent({ status: 'approved', userId });
 
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callback_query_id: callbackId, text: 'অনুমোদিত হয়েছে!' })
-      });
-    } else if (action === 'reject') {
-      sendSSEEvent({ status: 'rejected', userId });
+        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackId, text: 'অনুমোদিত হয়েছে!' })
+        });
+      } else if (action === 'reject') {
+        sendSSEEvent({ status: 'rejected', userId });
 
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callback_query_id: callbackId, text: 'বাতিল করা হয়েছে!' })
-      });
+        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackId, text: 'বাতিল করা হয়েছে!' })
+        });
+      }
     }
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.sendStatus(500);
   }
-
-  res.sendStatus(200);
 });
 
 app.get('/', (req, res) => {
@@ -128,33 +130,4 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server active on port ${PORT}`);
-});
-
-});
-
-// ৬. স্ট্যাটাস চেক এপিআই (Polling)
-app.get('/api/status/:recordId', (req, res) => {
-    const recordId = req.params.recordId;
-    
-    if (approvalsStore.has(recordId)) {
-        const data = approvalsStore.get(recordId);
-        return res.json({ success: true, data: { status: data.status } });
-    }
-
-    return res.status(404).json({ success: false, message: 'রেকর্ড পাওয়া যায়নি' });
-});
-
-// ১ ঘণ্টার পুরানো মেমোরি অটো ক্লিনআপ
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of approvalsStore.entries()) {
-        if (now - value.timestamp > 3600000) {
-            approvalsStore.delete(key);
-        }
-    }
-}, 600000);
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
 });
