@@ -40,9 +40,10 @@ if __name__ == '__main__':
         app = ApplicationBuilder().token(BOT_TOKEN).build()
         
         # বিভিন্ন সোর্স থেকে মেসেজ রিসিভ করার জন্য হ্যান্ডলারগুলো যোগ করা হলো
-        app.add_handler(MessageHandler(filters.ALL, send_to_channel))
+        app.add_handler(MessageHandler(filters.ALL & ~filters.UpdateType.EDITED, send_to_channel))
         app.add_handler(ChannelPostHandler(send_to_channel))
         app.add_handler(EditedMessageHandler(filters.ALL, send_to_channel))
         
         print("Bot is running...")
-        app.run_polling()
+        # allowed_updates যুক্ত করা হয়েছে যাতে রিয়েল-টাইমে সমস্ত টাইপের আপডেট ফেচ করতে পারে
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
