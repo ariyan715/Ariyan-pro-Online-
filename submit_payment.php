@@ -1,56 +1,45 @@
 <?php
-// submit_payment.php
-
 header('Content-Type: application/json');
 
-// TODO: আপনার টেলিগ্রাম বট টোকেন এবং চ্যাট আইডি এখানে বসিয়ে দিন
-$botToken = "8522645523:AAGKKxWJOGjxneVzhrRw-gd1feQP6KgF150"; // যেমন: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
-$chatId   = "6690005625";     // অ্যাডমিনের টেলিগ্রাম চ্যাট আইডি
+$botToken = '8522645523:AAGKKxWJOGjxneVzhrRw-gd1feQP6KgF150'; // আপনার টেলিগ্রাম বট টোকেন বসান
+$chatId = '6690005625';     // আপনার টেলিগ্রাম চ্যাট আইডি বসান
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $gateway =$_POST['gateway'] ?? 'Unknown';
-    $trxId   =$_POST['trx_id'] ?? '';
+$gateway = isset($_POST['gateway']) ? $_POST['gateway'] : 'bkash';
+$trxId = isset($_POST['trx_id']) ? $_POST['trx_id'] : '';
+
+if (empty($trxId) || !isset($_FILES['screenshot'])) {
+    echo json_encode(['status' => 'error', 'message' => 'TrxID অথবা স্ক্রিনশট পাওয়া যায়নি!']);
+    exit;
+}
+
+$file = $_FILES['screenshot'];
+$uploadDir = 'uploads/';
+if (!is_dir($uploadDir)) {
+    mkdir($uploadDir, 0755, true);
+}
+
+$uploadFile = $uploadDir . basename($file['name']);
+if (move_uploaded_file($file['tmp_name'], $uploadFile)) {
+    $message = "🚨 নতুন পেমেন্ট প্রুফ জমা হয়েছে!\n\n💳 গেটওয়ে: " . strtoupper($gateway) . "\n📌 TrxID: " . $trxId;
     
-    if (empty($trxId) \vert{}\vert{} !isset($_FILES['screenshot'])) {
-        echo json_encode(['status' => 'error', 'message' => 'প্রয়োজনীয় তথ্য অনুপস্থিত।']);
-        exit;
-    }
-
-    $fileTmpPath =$_FILES['screenshot']['tmp_name'];
-    $fileName    =$_FILES['screenshot']['name'];
-
-    // টেলিগ্রামে ডাটা ও ছবি পাঠানোর জন্য Telegram Bot API URL
-    $website = "https://api.telegram.org/bot" . $botToken;
-    $url     =$website . "/sendPhoto";
-
-    $caption  = "🚨 **নতুন পেমেন্ট প্রুফ জমা পড়েছে!**\n\n";
-    $caption .= "💳 **মেথড:** " . strtoupper($gateway) . "\n";
-    $caption .= "🔢 **TrxID:** `" . $trxId . "`\n";
-
+    // টেলিগ্রামে মেসেজ ও ছবি পাঠানোর cURL রিকোয়েস্ট
+    $url = "https://api.telegram.org/bot{$botToken}/sendPhoto";
     $postFields = [
         'chat_id' => $chatId,
-        'caption' => $caption,
-        'parse_mode' => 'Markdown',
-        'photo'   => new CURLFile($fileTmpPath, $_FILES['screenshot']['type'],$fileName)
+        'caption' => $message,
+        'photo' => new CURLFile(realpath($uploadFile))
     ];
 
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL,$url);
-    curl_setopt($ch, CURLOPT_POST, 1);
-    curl_setopt($ch, CURLOPT_POSTFIELDS,$postFields);
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    
-    $serverOutput = curl_exec($ch);
+    $response = curl_exec($ch);
     curl_close($ch);
 
-    $result = json_decode($serverOutput, true);
-
-    if ($result && isset($result['ok']) &&$result['ok'] == true) {
-        echo json_encode(['status' => 'success']);
-    } else {
-        echo json_encode(['status' => 'error', 'message' => 'টেলিগ্রামে বার্তা পাঠাতে ব্যর্থ হয়েছে। বট টোকেন চেক করুন।']);
-    }
+    echo json_encode(['status' => 'success']);
 } else {
-    echo json_encode(['status' => 'error', 'message' => 'অবৈধ রিকোয়েস্ট।']);
+    echo json_encode(['status' => 'error', 'message' => 'ফাইল আপলোড ব্যর্থ হয়েছে।']);
 }
 ?>
