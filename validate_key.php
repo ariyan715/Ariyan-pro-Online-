@@ -1,0 +1,98 @@
+<?php
+header('Content-Type: application/json');
+
+// ২০০টি বৈধ পাসওয়ার্ড বা এক্সেস কি-এর লিস্ট
+$validKeys = [
+    // ইউজার ও সিকিউরিটি টোকেন (১-১০)
+    "USR1-KEY1-ABC1-1239", "USR2-KEY2-XYZ2-5678", "USR3-KEY3-DEF3-9012",
+    "USR4-KEY4-GHI4-3456", "USR5-KEY5-JKL5-7890", "SEC1-TOK1-AA01-1111",
+    "SEC2-TOK2-BB02-2222", "SEC3-TOK3-CC03-3333", "SEC4-TOK4-DD04-4444",
+    "SEC5-TOK5-EE05-5555",
+
+    // অটো-জেনারেটেড ২০০টি সিকিউর কি (KEY0-1001 থেকে KEY0-1190)
+    "KEY0-1001-A1B2-C3D4", "KEY0-1002-E5F6-G7H8", "KEY0-1003-I9J0-K1L2", "KEY0-1004-M3N4-O5P6", "KEY0-1005-Q7R8-S9T0",
+    "KEY0-1006-U1V2-W3X4", "KEY0-1007-Y5Z6-A7B8", "KEY0-1008-C9D0-E1F2", "KEY0-1009-G3H4-I5J6", "KEY0-1010-K7L8-M9N0",
+    "KEY0-1011-O1P2-Q3R4", "KEY0-1012-S5T6-U7V8", "KEY0-1013-W9X0-Y1Z2", "KEY0-1014-A3B4-C5D6", "KEY0-1015-E7F8-G9H0",
+    "KEY0-1016-I1J2-K3L4", "KEY0-1017-M5N6-O7P8", "KEY0-1018-Q9R0-S1T2", "KEY0-1019-U3V4-W5X6", "KEY0-1020-Y7Z8-A9B0",
+    "KEY0-1021-C1D2-E3F4", "KEY0-1022-G5H6-I7J8", "KEY0-1023-K9L0-M1N2", "KEY0-1024-O3P4-Q5R6", "KEY0-1025-S7T8-U9V0",
+    "KEY0-1026-W1X2-Y3Z4", "KEY0-1027-A5B6-C7D8", "KEY0-1028-E9F0-G1H2", "KEY0-1029-I3J4-K5L6", "KEY0-1030-M7N8-O9P0",
+    "KEY0-1031-Q1R2-S3T4", "KEY0-1032-U5V6-W7X8", "KEY0-1033-Y9Z0-A1B2", "KEY0-1034-C3D4-E5F6", "KEY0-1035-G7H8-I9J0",
+    "KEY0-1036-K1L2-M3N4", "KEY0-1037-O5P6-Q7R8", "KEY0-1038-S9T0-U1V2", "KEY0-1039-W3X4-Y5Z6", "KEY0-1040-A7B8-C9D0",
+    "KEY0-1041-E1F2-G3H4", "KEY0-1042-I5J6-K7L8", "KEY0-1043-M9N0-O1P2", "KEY0-1044-Q3R4-S5T6", "KEY0-1045-U7V8-W9X0",
+    "KEY0-1046-Y1Z2-A3B4", "KEY0-1047-C5D6-E7F8", "KEY0-1048-G9H0-I1J2", "KEY0-1049-K3L4-M5N6", "KEY0-1050-O7P8-Q9R0",
+    "KEY0-1051-S1T2-U3V4", "KEY0-1052-W5X6-Y7Z8", "KEY0-1053-A9B0-C1D2", "KEY0-1054-E3F4-G5H6", "KEY0-1055-I7J8-K9L0",
+    "KEY0-1056-M1N2-O3P4", "KEY0-1057-Q5R6-S7T8", "KEY0-1058-U9V0-W1X2", "KEY0-1059-Y3Z4-A5B6", "KEY0-1060-C7D8-E9F0",
+    "KEY0-1061-G1H2-I3J4", "KEY0-1062-K5L6-M7N8", "KEY0-1063-O9P0-Q1R2", "KEY0-1064-S3T4-U5V6", "KEY0-1065-W7X8-Y9Z0",
+    "KEY0-1066-A1B2-C3D4", "KEY0-1067-E5F6-G7H8", "KEY0-1068-I9J0-K1L2", "KEY0-1069-M3N4-O5P6", "KEY0-1070-Q7R8-S9T0",
+    "KEY0-1071-U1V2-W3X4", "KEY0-1072-Y5Z6-A7B8", "KEY0-1073-C9D0-E1F2", "KEY0-1074-G3H4-I5J6", "KEY0-1075-K7L8-M9N0",
+    "KEY0-1076-O1P2-Q3R4", "KEY0-1077-S5T6-U7V8", "KEY0-1078-W9X0-Y1Z2", "KEY0-1079-A3B4-C5D6", "KEY0-1080-E7F8-G9H0",
+    "KEY0-1081-I1J2-K3L4", "KEY0-1082-M5N6-O7P8", "KEY0-1083-Q9R0-S1T2", "KEY0-1084-U3V4-W5X6", "KEY0-1085-Y7Z8-A9B0",
+    "KEY0-1086-C1D2-E3F4", "KEY0-1087-G5H6-I7J8", "KEY0-1088-K9L0-M1N2", "KEY0-1089-O3P4-Q5R6", "KEY0-1090-S7T8-U9V0",
+    "KEY0-1091-W1X2-Y3Z4", "KEY0-1092-A5B6-C7D8", "KEY0-1093-E9F0-G1H2", "KEY0-1094-I3J4-K5L6", "KEY0-1095-M7N8-O9P0",
+    "KEY0-1096-Q1R2-S3T4", "KEY0-1097-U5V6-W7X8", "KEY0-1098-Y9Z0-A1B2", "KEY0-1099-C3D4-E5F6", "KEY0-1100-G7H8-I9J0",
+    
+    // প্রিমিয়াম ব্যাচ ২ (KEY0-1101 থেকে KEY0-1200)
+    "KEY0-1101-K1L2-M3N4", "KEY0-1102-O5P6-Q7R8", "KEY0-1103-S9T0-U1V2", "KEY0-1104-W3X4-Y5Z6", "KEY0-1105-A7B8-C9D0",
+    "KEY0-1106-E1F2-G3H4", "KEY0-1107-I5J6-K7L8", "KEY0-1108-M9N0-O1P2", "KEY0-1109-Q3R4-S5T6", "KEY0-1110-U7V8-W9X0",
+    "KEY0-1111-Y1Z2-A3B4", "KEY0-1112-C5D6-E7F8", "KEY0-1113-G9H0-I1J2", "KEY0-1114-K3L4-M5N6", "KEY0-1115-O7P8-Q9R0",
+    "KEY0-1116-S1T2-U3V4", "KEY0-1117-W5X6-Y7Z8", "KEY0-1118-A9B0-C1D2", "KEY0-1119-E3F4-G5H6", "KEY0-1120-I7J8-K9L0",
+    "KEY0-1121-M1N2-O3P4", "KEY0-1122-Q5R6-S7T8", "KEY0-1123-U9V0-W1X2", "KEY0-1124-Y3Z4-A5B6", "KEY0-1125-C7D8-E9F0",
+    "KEY0-1126-G1H2-I3J4", "KEY0-1127-K5L6-M7N8", "KEY0-1128-O9P0-Q1R2", "KEY0-1129-S3T4-U5V6", "KEY0-1130-W7X8-Y9Z0",
+    "KEY0-1131-A1B2-C3D4", "KEY0-1132-E5F6-G7H8", "KEY0-1133-I9J0-K1L2", "KEY0-1134-M3N4-O5P6", "KEY0-1135-Q7R8-S9T0",
+    "KEY0-1136-U1V2-W3X4", "KEY0-1137-Y5Z6-A7B8", "KEY0-1138-C9D0-E1F2", "KEY0-1139-G3H4-I5J6", "KEY0-1140-K7L8-M9N0",
+    "KEY0-1141-O1P2-Q3R4", "KEY0-1142-S5T6-U7V8", "KEY0-1143-W9X0-Y1Z2", "KEY0-1144-A3B4-C5D6", "KEY0-1145-E7F8-G9H0",
+    "KEY0-1146-I1J2-K3L4", "KEY0-1147-M5N6-O7P8", "KEY0-1148-Q9R0-S1T2", "KEY0-1149-U3V4-W5X6", "KEY0-1150-Y7Z8-A9B0",
+    "KEY0-1151-C1D2-E3F4", "KEY0-1152-G5H6-I7J8", "KEY0-1153-K9L0-M1N2", "KEY0-1154-O3P4-Q5R6", "KEY0-1155-S7T8-U9V0",
+    "KEY0-1156-W1X2-Y3Z4", "KEY0-1157-A5B6-C7D8", "KEY0-1158-E9F0-G1H2", "KEY0-1159-I3J4-K5L6", "KEY0-1160-M7N8-O9P0",
+    "KEY0-1161-Q1R2-S3T4", "KEY0-1162-U5V6-W7X8", "KEY0-1163-Y9Z0-A1B2", "KEY0-1164-C3D4-E5F6", "KEY0-1165-G7H8-I9J0",
+    "KEY0-1166-K1L2-M3N4", "KEY0-1167-O5P6-Q7R8", "KEY0-1168-S9T0-U1V2", "KEY0-1169-W3X4-Y5Z6", "KEY0-1170-A7B8-C9D0",
+    "KEY0-1171-E1F2-G3H4", "KEY0-1172-I5J6-K7L8", "KEY0-1173-M9N0-O1P2", "KEY0-1174-Q3R4-S5T6", "KEY0-1175-U7V8-W9X0",
+    "KEY0-1176-Y1Z2-A3B4", "KEY0-1177-C5D6-E7F8", "KEY0-1178-G9H0-I1J2", "KEY0-1179-K3L4-M5N6", "KEY0-1180-O7P8-Q9R0",
+    "KEY0-1181-S1T2-U3V4", "KEY0-1182-W5X6-Y7Z8", "KEY0-1183-A9B0-C1D2", "KEY0-1184-E3F4-G5H6", "KEY0-1185-I7J8-K9L0",
+    "KEY0-1186-M1N2-O3P4", "KEY0-1187-Q5R6-S7T8", "KEY0-1188-U9V0-W1X2", "KEY0-1189-Y3Z4-A5B6", "KEY0-1190-C7D8-E9F0",
+    "KEY0-1191-G1H2-I3J4", "KEY0-1192-K5L6-M7N8", "KEY0-1193-O9P0-Q1R2", "KEY0-1194-S3T4-U5V6", "KEY0-1195-W7X8-Y9Z0",
+    "KEY0-1196-A1B2-C3D4", "KEY0-1197-E5F6-G7H8", "KEY0-1198-I9J0-K1L2", "KEY0-1199-M3N4-O5P6", "KEY0-1200-PROX-VIP9"
+];
+
+$key = isset($_POST['key']) ? trim($_POST['key']) : '';
+$device_fp = isset($_POST['device_fp']) ? trim($_POST['device_fp']) : '';
+
+if (empty($key) || strlen($key) !== 19 || !in_array($key, $validKeys)) {
+    echo json_encode(['status' => 'error', 'message' => 'অবৈধ বা ভুল ১৯ ডিজিটের এক্সেস কি (Key)! সঠিক পাসওয়ার্ড দিন।']);
+    exit;
+}
+
+$bindingFile = 'bindings.json';
+$bindings = file_exists($bindingFile) ? json_decode(file_get_contents($bindingFile), true) : [];
+
+if (!is_array($bindings)) {
+    $bindings = [];
+}
+
+// চেক করা পাসওয়ার্ড ইতিমধ্যে অন্য ডিভাইসে বাইন্ড করা আছে কিনা
+if (isset($bindings[$key])) {
+    if ($bindings[$key]['device_fp'] !== $device_fp) {
+        echo json_encode(['status' => 'error', 'message' => 'এই পাসওয়ার্ডটি ইতিমধ্যে অন্য ব্রাউজার বা ডিভাইসে ব্যবহৃত হয়েছে! অন্য ডিভাইস থেকে এটি এক্সেস করা যাবে না।']);
+        exit;
+    }
+    // মেয়াদ চেক (৭ দিন)
+    if (time() >= $bindings[$key]['package_expiry']) {
+        echo json_encode(['status' => 'error', 'message' => 'আপনার ৭ দিনের প্যাকেজের মেয়াদ শেষ হয়েছে। দয়া করে নতুন পাসওয়ার্ড কিনুন।']);
+        exit;
+    }
+} else {
+    // নতুন ডিভাইস বাইন্ডিং ও ৭ দিনের প্যাকেজ স্টার্ট টাইম কাউন্টডাউন শুরু
+    $bindings[$key] = [
+        'device_fp' => $device_fp,
+        'start_time' => time(),
+        'package_expiry' => time() + (7 * 24 * 60 * 60)
+    ];
+    file_put_contents($bindingFile, json_encode($bindings));
+}
+
+echo json_encode([
+    'status' => 'success',
+    'package_expiry' => $bindings[$key]['package_expiry'] * 1000,
+    'avatar' => 'https://i.pravatar.cc/150?img=' . (rand(1, 69))
+]);
+?>
