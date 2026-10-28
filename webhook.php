@@ -1,5 +1,5 @@
 <?php
-// রেলওয়ে সার্ভারে ক্র্যাশ বা আউটপুট প্রবলেম এড়াতে এরর রিপোর্টিং অফ রাখা হলো
+// সার্ভারে ক্র্যাশ বা আউটপুট প্রবলেম এড়াতে এরর রিপোর্টিং অফ রাখা হলো
 error_reporting(0);
 ini_set('display_errors', 0);
 
@@ -15,14 +15,22 @@ if (!$update) {
     exit;
 }
 
-// যেকোনো সোর্স থেকে আসা মেসেজ বা পোস্ট অবজেক্ট এক্সট্র্যাক্ট করা
+$botToken = getenv('BOT_TOKEN'); 
+$targetChannelId = getenv('TARGET_CHANNEL_ID'); // আপনার নির্দিষ্ট টেলিগ্রাম চ্যানেল আইডি (-100xxxxxxxxx)
+
 $msgObject = null;
+$isChannelPost = false;
+
+// মেসেজ কোন সোর্স থেকে আসছে তা চেক করা (বট চ্যাট নাকি চ্যানেল পোস্ট)
 if (isset($update['message'])) {
     $msgObject = $update['message'];
+    $isChannelPost = false;
 } elseif (isset($update['channel_post'])) {
     $msgObject = $update['channel_post'];
+    $isChannelPost = true; // এটি চ্যানেল থেকে আসা পোস্ট
 } elseif (isset($update['edited_message'])) {
     $msgObject = $update['edited_message'];
+    $isChannelPost = false;
 }
 
 if ($msgObject) {
@@ -35,7 +43,7 @@ if ($msgObject) {
 
     // যদি টেক্সট বা ক্যাপশন থাকে তবেই প্রসেস করবে
     if (!empty($text)) {
-        $from = 'System / Source';
+        $from = $isChannelPost ? 'Channel Broadcast' : 'System / Source';
         $username = 'Bot';
 
         if (isset($msgObject['from']['first_name'])) {
@@ -53,7 +61,7 @@ if ($msgObject) {
         $time = date('Y-m-d H:i:s');
         $msgFile = 'messages.json';
         
-        // ১. ড্যাশবোর্ডের জন্য messages.json ফাইলে সেভ করার লজিক (File Locking সহ)
+        // ১. ড্যাশবোর্ডের জন্য messages.json ফাইলে নিরাপদে সেভ করার লজিক (File Locking সহ)
         $messages = [];
         if (file_exists($msgFile)) {
             $fileContent = file_get_contents($msgFile);
@@ -63,7 +71,7 @@ if ($msgObject) {
             }
         }
 
-        // নতুন মেসেজ সবার ওপরে যোগ করা
+        // নতুন মেসেজ সবার ওপরে যোগ করা (যাতে ড্যাশবোর্ডে রিয়েল-টাইমে দেখা যায়)
         array_unshift($messages, [
             'from' => $from,
             'username' => $username,
@@ -71,30 +79,31 @@ if ($msgObject) {
             'time' => $time
         ]);
 
-        // LOCK_EX ব্যবহার করার ফলে ডেটা কখনো করাপ্ট বা নষ্ট হবে না
         file_put_contents($msgFile, json_encode($messages, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
 
-        // ২. ফ্রি জাংশন বট স্টাইল অটো-রিপোট / ফরোয়ার্ড লজিক (রিপ্লাই ছাড়াই সরাসরি সেন্ড)
-        // রেলওয়ের Environment Variables থেকে টোকেন এবং টার্গেট চ্যানেল আইডি নেবে
-        $botToken = getenv('BOT_TOKEN'); 
-        $targetChannelId = getenv('TARGET_CHANNEL_ID'); // উদাহরণ: -100xxxxxxxxxx বা @channelname
-
+        // ২. ফ্রি জাংশন বোর্ড স্টাইল লুপ-প্রিভেন্টেড অটো-ফরওয়ার্ডিং লজিক
         if (!empty($botToken) && !empty($targetChannelId)) {
-            $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
-            $postData = [
-                'chat_id' => $targetChannelId,
-                'text' => $text,
-                'parse_mode' => 'HTML'
-            ];
+            
+            // শর্ত: মেসেজটি যদি সরাসরি বট বা অন্য সোর্স থেকে আসে, তবেই কেবল তা চ্যানেলে পাঠাবে। 
+            // আর যদি মেসেজটি ইতিমধ্যে চ্যানেল থেকে আসে (channel_post), তবে সেটি আর চ্যানেলে রি-সেন্ড হবে না। 
+            // এর ফলে ইনফিনিট লুপ বা বারবার ফরওয়ার্ড হওয়া চিরতরে বন্ধ থাকবে!
+            if (!$isChannelPost) {
+                $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
+                $postData = [
+                    'chat_id' => $targetChannelId,
+                    'text' => $text,
+                    'parse_mode' => 'HTML'
+                ];
 
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 5); // ৫ সেকেন্ড টাইমআউট, যাতে রেলওয়ে সার্ভার হ্যাং না করে
-            curl_exec($ch);
-            curl_close($ch);
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_URL, $url);
+                curl_setopt($ch, CURLOPT_POST, 1);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 5); // ৫ সেকেন্ড টাইমআউট
+                curl_exec($ch);
+                curl_close($ch);
+            }
         }
     }
 }
