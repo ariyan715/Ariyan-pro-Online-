@@ -1,5 +1,8 @@
 <?php
-header('Content-Type: application/json');
+error_reporting(0);
+ini_set('display_errors', 0);
+
+header('Content-Type: application/json; charset=utf-8');
 
 $botToken = '8522645523:AAGKKxWJOGjxneVzhrRw-gd1feQP6KgF150';
 $chatId = '6690005625';
@@ -7,15 +10,23 @@ $chatId = '6690005625';
 $gateway = isset($_POST['gateway']) ? trim($_POST['gateway']) : 'bkash';
 $trxId = isset($_POST['trx_id']) ? trim($_POST['trx_id']) : '';
 
-if (empty($trxId) || !isset($_FILES['screenshot'])) {
-    echo json_encode(['status' => 'error', 'message' => 'TrxID অথবা স্ক্রিনশট পাওয়া যায়নি!']);
+if ($trxId === '' || !isset($_FILES['screenshot']) || $_FILES['screenshot']['error'] !== UPLOAD_ERR_OK) {
+    echo json_encode(['status' => 'error', 'message' => 'TrxID অথবা স্ক্রিনশট পাওয়া যায়নি!'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 $file = $_FILES['screenshot'];
+$allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+$ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+if (!in_array($ext, $allowedExts, true)) {
+    echo json_encode(['status' => 'error', 'message' => 'শুধু JPG, PNG বা WEBP ছবি সাপোর্ট করে।'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 $uploadDir = __DIR__ . '/uploads/';
 if (!is_dir($uploadDir)) {
-    mkdir($uploadDir, 0755, true);
+    @mkdir($uploadDir, 0777, true);
 }
 
 $safeName = time() . '_' . preg_replace('/[^A-Za-z0-9._-]/', '_', basename($file['name']));
@@ -37,14 +48,14 @@ if (move_uploaded_file($file['tmp_name'], $uploadFile)) {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     curl_exec($ch);
     curl_close($ch);
 
-    // ড্যাশবোর্ডে দেখানোর জন্য messages.json-এ সেভ
     $msgFile = __DIR__ . '/messages.json';
     $messages = [];
     if (file_exists($msgFile)) {
-        $decoded = json_decode(file_get_contents($msgFile), true);
+        $decoded = json_decode(@file_get_contents($msgFile), true);
         if (is_array($decoded)) {
             $messages = $decoded;
         }
@@ -61,8 +72,8 @@ if (move_uploaded_file($file['tmp_name'], $uploadFile)) {
     $messages = array_slice($messages, 0, 200);
     @file_put_contents($msgFile, json_encode($messages, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
 
-    echo json_encode(['status' => 'success', 'file' => 'uploads/' . $safeName]);
+    echo json_encode(['status' => 'success', 'file' => 'uploads/' . $safeName], JSON_UNESCAPED_UNICODE);
 } else {
-    echo json_encode(['status' => 'error', 'message' => 'ফাইল আপলোড ব্যর্থ হয়েছে।']);
+    echo json_encode(['status' => 'error', 'message' => 'ফাইল আপলোড ব্যর্থ হয়েছে।'], JSON_UNESCAPED_UNICODE);
 }
 ?>
